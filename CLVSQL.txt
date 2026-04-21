@@ -1,0 +1,179 @@
+-- Create database 
+CREATE DATABASE CLV_Analysis;
+USE CLV_Analysis;
+
+-- Create Table 
+CREATE TABLE customer_data (
+    ID INT PRIMARY KEY,
+    Year_Birth INT,
+    Education VARCHAR(50),
+    Marital_S VARCHAR(50),
+    Income DECIMAL(12,2),
+    Kidhome INT,
+    Teenhome INT,
+    Dt_Custor DATE,
+    Recency INT,
+    MntWines INT,
+    MntFruits INT,
+    MntMeatP INT,
+    MntFishP INT,
+    MntSweet INT,
+    MntGoldP INT,
+    NumDeals INT,
+    NumWeb INT,
+    NumCatal INT,
+    NumStore INT,
+    AcceptedCmp1 INT,
+    AcceptedCmp2 INT,
+    AcceptedCmp3 INT,
+    AcceptedCmp4 INT,
+    AcceptedCmp5 INT,
+    Complain INT,
+    Z_CostCor INT,
+    Z_Revenu INT,
+    Response INT
+);
+
+SELECT * FROM customer;
+
+-- Top 5 customers by lifertime spending 
+SELECT 
+    ID,
+    SUM(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS total_spending
+FROM customer
+GROUP BY ID
+ORDER BY total_spending DESC
+LIMIT 5;
+
+-- Customer AGE Segmentation with Average Spending 
+SELECT 
+    CASE 
+        WHEN Year_Birth <= 1970 THEN 'Senior'
+        WHEN Year_Birth BETWEEN 1971 AND 1990 THEN 'Middle Age'
+        ELSE 'Young'
+    END AS age_group,
+    AVG(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS avg_spending
+FROM customer
+GROUP BY age_group;
+
+-- Runing total of spending customer (order by DT_CUSTOR)
+SELECT 
+    ID,
+    Dt_Customer,
+    SUM(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) 
+        OVER (PARTITION BY ID ORDER BY Dt_Customer ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS running_total
+FROM customer
+ORDER BY ID, Dt_Customer;
+
+-- rank customers by receny (most recent buyers first)
+SELECT 
+    ID,
+    Recency,
+    RANK() OVER (ORDER BY Recency ASC) AS recency_rank
+FROM customer;
+
+-- Find customer who accepted at least 3 campaigns 
+SELECT 
+    ID,
+    (AcceptedCmp1 + AcceptedCmp2 + AcceptedCmp3 + AcceptedCmp4 + AcceptedCmp5) AS campaigns_accepted
+FROM customer
+WHERE (AcceptedCmp1 + AcceptedCmp2 + AcceptedCmp3 + AcceptedCmp4 + AcceptedCmp5) >= 3;
+
+-- customer loyalty score 
+SELECT 
+    ID,
+    (NumDealsPurchases + NumWebPurchases + NumCatalogPurchases + NumStorePurchases) AS loyalty_score,
+    RANK() OVER (ORDER BY (NumDealsPurchases + NumWebPurchases + NumCatalogPurchases + NumStorePurchases) DESC) AS loyalty_rank
+FROM customer;
+
+-- Percentage contrin=bution of each product category per customer 
+SELECT 
+    ID,
+    MntWines,
+    ROUND(MntWines * 100.0 / NULLIF((MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds),0),2) AS pct_wines,
+    MntFruits,
+    ROUND(MntFruits * 100.0 / NULLIF((MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds),0),2) AS pct_fruits
+    -- repeat for other categories
+FROM customer
+LIMIT 0, 1000;
+
+-- Find customers with abvoe average spending in wines
+WITH avg_wine AS (
+    SELECT AVG(MntWines) AS avg_wine_spending FROM customer
+)
+SELECT 
+    ID,
+    MntWines
+FROM customer, avg_wine
+WHERE customer.MntWines > avg_wine.avg_wine_spending;
+
+-- Identify Customers with Children (Kidhome + Teenhome) and Spending > 1000
+SELECT 
+    ID,
+    (Kidhome + Teenhome) AS total_children,
+    (MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS total_spending
+FROM customer
+WHERE (Kidhome + Teenhome) > 0
+  AND (MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) > 1000;
+
+
+-- Customer response rate to campagins 
+SELECT 
+    ID,
+    Response,
+    ROUND(Response * 100.0 / NULLIF((AcceptedCmp1 + AcceptedCmp2 + AcceptedCmp3 + AcceptedCmp4 + AcceptedCmp5),0),2) AS response_rate
+FROM customer;
+
+-- ADVANCED LEVEL QUREY 
+-- 1. BASIC CLV
+SELECT 
+    ID,
+    SUM(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS CLV
+FROM customer
+GROUP BY ID
+ORDER BY CLV DESC;
+
+-- 2. Identify at risk customers 
+SELECT 
+    ID,
+    Recency,
+    SUM(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS total_spending
+FROM customer
+GROUP BY ID, Recency
+HAVING Recency > 60 AND total_spending < 500
+ORDER BY Recency DESC, total_spending ASC;
+
+-- 3. Customer Acquistion cost vs lifetime value ratio
+SELECT 
+    ID,
+    SUM(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS CLV,
+    Z_CostContact AS CAC,
+    ROUND(SUM(MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) / NULLIF(Z_CostContact,0),2) AS CLV_CAC_ratio
+FROM customer
+GROUP BY ID, Z_CostContact
+ORDER BY CLV_CAC_ratio DESC
+LIMIT 1000;
+
+-- CLV BY product category 
+SELECT 
+    ID,
+    MntWines,
+    MntFruits,
+    MntMeatProducts,
+    MntFishProducts,
+    MntSweetProducts,
+    MntGoldProds,
+    (MntWines + MntFruits + MntMeatProducts + MntFishProducts + MntSweetProducts + MntGoldProds) AS total_spending
+FROM customer
+ORDER BY total_spending DESC;
+
+-- Repeat purchase rate anaylsis
+SELECT 
+    ID,
+    (NumDealsPurchases + NumWebPurchases + NumCatalogPurchases + NumStorePurchases) AS total_purchases,
+    CASE 
+        WHEN (NumDealsPurchases + NumWebPurchases + NumCatalogPurchases + NumStorePurchases) > 1 THEN 'Repeat Buyer'
+        ELSE 'One-time Buyer'
+    END AS purchase_type
+FROM customer
+ORDER BY total_purchases DESC;
